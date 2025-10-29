@@ -14,23 +14,30 @@ normal_data = pd.DataFrame()
 theft_data = pd.DataFrame()
 
 def load_data():
+    """Loads and splits the dataset into NORMAL and THEFT data."""
     global normal_data, theft_data
-    if not os.path.exists(DATA_FILE):
-        print(f"--- 💥 CRITICAL ERROR 💥 ---")
-        print(f"Data file not found: {DATA_FILE}")
-        print("Please move the CSV file to the main 'Gridlock ai' folder.")
-        print("------------------------------")
-        return False
+    
+    relative_data_file_path = os.path.join(os.path.dirname(__file__), "..", DATA_FILE)
+    
+    if not os.path.exists(relative_data_file_path):
+        if not os.path.exists(DATA_FILE):
+            print(f"--- 💥 CRITICAL ERROR 💥 ---")
+            print(f"Data file not found: {DATA_FILE}")
+            print("Please make sure 'gridlock_dataset.csv' is in your main 'Gridlock ai' folder.")
+            print("------------------------------")
+            return False
+        else:
+             relative_data_file_path = DATA_FILE
     try:
-        df = pd.read_csv(DATA_FILE)
+        df = pd.read_csv(relative_data_file_path)
         normal_data = df[df['Label'] == 0]
         theft_data = df[df['Label'] == 1]
         
         if len(normal_data) == 0 or len(theft_data) == 0:
-            print("Error: Could not find Label 0 or Label 1 data.")
+            print("Error: Could not find Label 0 (NORMAL) or Label 1 (THEFT) data in the CSV.")
             return False
             
-        print("--- ✅ Data Loaded Successfully ---")
+        print("--- ✅ Data Loaded Successfully (Simulator) ---")
         print(f"Found {len(normal_data)} 'NORMAL' samples.")
         print(f"Found {len(theft_data)} 'THEFT' samples.")
         print("-----------------------------------")
@@ -40,7 +47,9 @@ def load_data():
         return False
 
 def generate_data_point():
+    """Picks a random real data sample based on the current mode."""
     global SIMULATION_MODE
+    
     if SIMULATION_MODE == "NORMAL":
         sample = normal_data.sample(1)
     else:
@@ -56,6 +65,7 @@ def generate_data_point():
     return data_packet
 
 def mode_switcher():
+    """Waits for the user to press ENTER to toggle the mode."""
     global SIMULATION_MODE
     while True:
         try:
@@ -67,7 +77,7 @@ def mode_switcher():
                 SIMULATION_MODE = "NORMAL"
                 print("\n*** ✅ SIMULATION MODE SET TO NORMAL (Label 0) ✅ ***\n")
         except EOFError:
-            pass
+            pass 
 
 if load_data(): 
     print("--- ⚡ GRIDLOCK AI: High-Fidelity Simulator Started ⚡ ---")
@@ -82,6 +92,7 @@ if load_data():
     while True:
         try:
             data = generate_data_point()
+            
             response = requests.post(API_ENDPOINT_URL, json=data, timeout=3)
             
             if response.status_code == 200:
@@ -105,3 +116,4 @@ if load_data():
             break
 else:
     print("Script failed to start. Please fix the data file issue above.")
+
