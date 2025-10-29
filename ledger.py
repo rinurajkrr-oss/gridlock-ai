@@ -1,69 +1,93 @@
 import json
-import hashlib
 import os
+import hashlib
 from datetime import datetime
 
 LEDGER_FILE = "web3_ledger.json"
 
-def get_last_entry():
-    """
-    Reads the ledger file and returns the very last entry.
-    If the file is empty or missing, returns a "Genesis" (first) entry.
-    """
+def get_last_hash():
+    """Helper function to get the hash of the last block in the chain."""
     if not os.path.exists(LEDGER_FILE):
-        return {
-            "entry_hash": "0000000000000000000000000000000000000000000000000000000000000000" 
-        }
+        return "0000000000000000000000000000000000000000000000000000000000000000"
     
     try:
         with open(LEDGER_FILE, "r") as f:
             ledger = json.load(f)
-            if not ledger: 
-                raise IndexError
-            return ledger[-1] 
+        if not ledger: 
+            return "0000000000000000000000000000000000000000000000000000000000000000"
+        return ledger[-1]['entry_hash']
     except (json.JSONDecodeError, IndexError, FileNotFoundError):
-        return {
-            "entry_hash": "0000000000000000000000000000000000000000000000000000000000000000"
-        }
+        return "0000000000000000000000000000000000000000000000000000000000000000"
 
-def hash_data(data_string):
+def add_to_ledger(data_payload):
     """
-    Helper function to create a SHA-256 hash
+    Creates a new, hashed entry for the local ledger.
+    Returns the new hash so it can be sent to the public.
     """
-    return hashlib.sha256(data_string.encode('utf-8')).hexdigest()
-
-def add_to_ledger(anomaly_data):
-    """
-    The main function. Called by the backend when an anomaly is found.
-    """
-    last_entry = get_last_entry()
-    previous_hash = last_entry['entry_hash']
-
-    new_entry_data = {
-        "timestamp": anomaly_data['timestamp'],
-        "voltage": anomaly_data['voltage'],
-        "current": anomaly_data['current'],
-        "power": anomaly_data['power'],
-        "anomaly_score": anomaly_data['anomaly_score'],
-        "previous_hash": previous_hash
-    }
-    
-    entry_string = json.dumps(new_entry_data, sort_keys=True)
-    entry_hash = hash_data(entry_string)
-    
-    new_entry_data['entry_hash'] = entry_hash
-
-    ledger = []
-    if os.path.exists(LEDGER_FILE):
+    if not os.path.exists(LEDGER_FILE):
+        ledger = []
+    else:
         try:
             with open(LEDGER_FILE, "r") as f:
                 ledger = json.load(f)
-        except json.JSONDecodeError:
-            ledger = [] 
+            if not isinstance(ledger, list):
+                ledger = []
+        except (json.JSONDecodeError, FileNotFoundError):
+            ledger = []
 
-    ledger.append(new_entry_data)
+    new_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "previous_hash": get_last_hash(),
+        "payload": data_payload
+    }
     
-    with open(LEDGER_FILE, "w") as f:
-        json.dump(ledger, f, indent=4)
+    entry_string = json.dumps(new_entry, sort_keys=True).encode('utf-8')
+    entry_hash = hashlib.sha256(entry_string).hexdigest()
+    
+    new_entry["entry_hash"] = entry_hash
+    
+    ledger.append(new_entry)
+    
+    try:
+        with open(LEDGER_FILE, "w") as f:
+            json.dump(ledger, f, indent=4)
         
-    print(f"--- 🔐 Web3 Ledger Entry Added (Hash: {entry_hash[:6]}...) ---")
+        return entry_hash, new_entry["timestamp"]
+    except Exception as e:
+        print(f"Error writing to ledger file: {e}")
+        return None, None
+
+def verify_ledger():
+    """
+    Verifies the integrity of the entire local hash chain.
+    Returns True if valid, False if tampered.
+    """
+    if not os.path.exists(LEDGER_FILE):
+        return True 
+
+    try:
+        with open(LEDGER_FILE, "r") as f:
+            ledger = json.load(f)
+    except Exception:
+        return False 
+
+    if not isinstance(ledger, list) or not ledger:
+        return True 
+
+    current_previous_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+
+    for entry in ledger:
+        if entry['previous_hash'] != current_previous_hash:
+            return False 
+        
+        entry_hash = entry.pop('entry_hash')
+        
+        entry_string = json.dumps(entry, sort_keys=True).encode('utf-8')
+        recalculated_hash = hashlib.sha256(entry_string).hexdigest()
+        
+        if recalculated_hash != entry_hash:
+            return False 
+        
+        current_previous_hash = entry_hash
+
+    return True
